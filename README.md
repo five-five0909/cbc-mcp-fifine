@@ -6,19 +6,128 @@
 
 ## 安装与注册
 
+推荐从本仓库源码安装，再以 **stdio MCP server** 注册到 Claude Code。下面的步骤不会修改你的 CodeBuddy 全局配置，也不需要 GitHub Token（仓库是公有的）。
+
+### 1. 准备环境
+
+- **Node.js ≥ 20**，并能运行 `npm`。
+- **Git**，用于克隆和更新源码。
+- **CodeBuddy Code**，作为被调用的执行器；需要已登录或已配置可用的模型。
+- **Claude Code**，作为 MCP 客户端；下面的注册命令需要 `claude` 已安装。
+
+先检查命令是否可用：
+
 ```bash
-npm install
-npm run build
-claude mcp add cbc -- node <项目绝对路径>/dist/index.js
+node --version
+npm --version
+git --version
+claude --version
 ```
 
-可选环境变量（加在 `claude mcp add` 里，用 `-e KEY=VALUE`）：
+如果还没有安装 CodeBuddy Code：
+
+```bash
+npm install -g @tencent-ai/codebuddy-code
+cbc --version
+cbc
+```
+
+首次运行 `cbc` 时，按终端提示完成登录或模型配置，确认能正常使用后退出。项目原有协议测试基于 **cbc 2.184.0**，其他版本的兼容性需要另行验证。
+
+> Windows 和 WSL 请分别视为独立环境。若在 WSL 运行 Claude Code，请在同一个 WSL 环境安装 Node.js、依赖和 CodeBuddy，并使用 `/home/...`、`/mnt/c/...` 等 Linux 路径，不要直接填 `C:\...`。
+
+### 2. 克隆源码并构建
+
+在你准备存放项目的目录执行（Bash、zsh 或 PowerShell 均可逐行运行）：
+
+```bash
+git clone https://github.com/five-five0909/cbc-mcp-fifine.git
+cd cbc-mcp-fifine
+npm ci
+npm run build
+```
+
+构建后入口是 `dist/index.js`。`npm ci` 会根据锁文件安装依赖；构建需要 TypeScript 开发依赖，因此不要加 `--omit=dev`。`dist/` 和 `node_modules/` 不在 Git 仓库中，克隆后必须安装并构建。
+
+在项目根目录执行以下命令，获取注册时要用的**入口绝对路径**：
+
+```bash
+node -p "require('node:path').resolve('dist/index.js')"
+```
+
+### 3. 注册到 Claude Code
+
+将下面引号中的路径替换成上一步输出的真实路径。注册后需要保留这个项目目录，因为 Claude Code 会从这里启动服务。
+
+Linux / macOS / WSL 示例：
+
+```bash
+claude mcp add --transport stdio --scope user cbc -- node "/absolute/path/cbc-mcp-fifine/dist/index.js"
+```
+
+Windows PowerShell 示例：
+
+```powershell
+claude mcp add --transport stdio --scope user cbc -- node "C:\path\cbc-mcp-fifine\dist\index.js"
+```
+
+`--scope user` 表示当前用户的所有项目都可使用。若只想在某个工作项目使用，先进入那个项目，再把它改成 `--scope local`。
+
+如使用其他支持 stdio 的 MCP 客户端，可在该客户端的 MCP 配置中合并以下内容，路径同样要替换：
+
+```json
+{
+  "mcpServers": {
+    "cbc": {
+      "command": "node",
+      "args": ["/absolute/path/cbc-mcp-fifine/dist/index.js"]
+    }
+  }
+}
+```
+
+Windows 的 JSON 路径可写成 `C:/path/cbc-mcp-fifine/dist/index.js`。若客户端找不到 `node`，将 `command` 改为 Node.js 可执行文件的绝对路径。
+
+### 4. 验证连接
+
+```bash
+claude mcp get cbc
+```
+
+重新启动 Claude Code 会话后，让它「调用 `cbc_list` 查看当前会话」。新启动的服务没有会话是正常的；能列出会话说明 MCP 连接可用，但尚未验证 CodeBuddy 的登录和模型调用。
+
+要验证完整链路，可再让 Claude 在你指定的**现有工作目录绝对路径**调用 `cbc_start`，只回复一句话、不读写文件；根据需要传入你自己的模型 ID，再用 `cbc_wait` 取结果、`cbc_stop` 结束会话。**这一步会真实调用模型，可能产生费用。**
+
+### 可选环境变量
+
+注册时可用 `-e KEY=VALUE` 配置环境变量，放在 `--` 之前。例如，限制可用工作目录：
+
+```bash
+claude mcp add --transport stdio --scope user -e "CBC_MCP_ALLOWED_ROOTS=/home/me/work" cbc -- node "/absolute/path/cbc-mcp-fifine/dist/index.js"
+```
 
 | 变量 | 作用 |
 |---|---|
-| `CBC_MCP_ALLOWED_ROOTS` | 允许作为 cwd 的根目录，多个用 `;` 分隔（Windows）。不设则不限制 |
+| `CBC_MCP_ALLOWED_ROOTS` | 允许作为会话 `cwd` 的根目录；多个目录在 Windows 用 `;` 分隔，Linux / macOS / WSL 用 `:` 分隔。不设则不限制。它限制可选工作目录，不是文件访问沙箱 |
 | `CBC_MCP_MAX_SESSIONS` | 同时存活的 cbc 会话上限，默认 4 |
-| `CBC_ENTRY` | 手动指定 `.../@tencent-ai/codebuddy-code/bin/codebuddy`（自动查找失败时用） |
+| `CBC_ENTRY` | 自动查找失败时，手动指定 CodeBuddy 的 JS 入口 `.../@tencent-ai/codebuddy-code/bin/codebuddy`，不要填 `cbc.cmd` |
+
+### 更新与常见问题
+
+更新时在本仓库根目录执行，再重启使用它的 MCP 客户端：
+
+```bash
+git pull --ff-only
+npm ci
+npm run build
+```
+
+- **找不到 `dist/index.js`**：确认已经运行 `npm run build`，且注册的是绝对路径。
+- **`tsc: Permission denied`**：可用 `node node_modules/typescript/bin/tsc -p .` 直接运行编译器；若依赖是从另一系统复制来的，建议在当前环境重新执行 `npm ci`。
+- **`Could not find the CodeBuddy Code entry`**：确认 CodeBuddy 安装在 MCP 客户端使用的同一环境。可运行 `npm root -g`，检查该目录下的 `@tencent-ai/codebuddy-code/bin/codebuddy`，然后用 `CBC_ENTRY` 显式指定。
+- **已连接但模型调用失败**：在同一环境单独运行 `cbc`，检查登录状态和模型配置；不要照抄测试里的自定义模型 ID。
+- **`cwd is outside CBC_MCP_ALLOWED_ROOTS`**：使用允许根目录内的工作目录，或调整注册时的环境变量。
+- **手动运行 `node dist/index.js` 后没有提示**：服务通过 stdin/stdout 等待 MCP 消息，不是交互式聊天程序；请通过 MCP 客户端验证。
 
 ## 典型流程
 
