@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run build)",
+      "Bash(npm run build:*)",
+      "Bash(npm test)",
+      "Bash(npm run smoke:*)",
+      "Bash(node test/:*)",
+      "Bash(npx tsc:*)",
+      "Bash(cbc --version)"
+    ],
+    "deny": [
+      "Edit(~/.codebuddy/settings.json)",
+      "Write(~/.codebuddy/settings.json)"
+    ]
+  }
+}
